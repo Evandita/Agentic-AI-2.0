@@ -17,13 +17,14 @@ class GeminiAgent(BaseAgent):
         config: AgentConfig,
         tool_registry: ToolRegistry,
         display: DisplayManager,
+        max_iterations: int = 10,
         logger = None
     ):
         super().__init__(
             name="Gemini Red Team Agent",
             tool_registry=tool_registry,
             display=display,
-            max_iterations=10,
+            max_iterations=max_iterations,
             logger=logger
         )
         
@@ -31,11 +32,21 @@ class GeminiAgent(BaseAgent):
         genai.configure(api_key=config.gemini_api_key)
         
         # Use Gemini 2.0 Flash by default, fall back to 1.5
+        self.model_name = 'gemini-2.0-flash'
         try:
-            self.model = genai.GenerativeModel('gemini-2.0-flash')
+            self.model = genai.GenerativeModel(self.model_name)
         except:
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            self.model_name = 'gemini-1.5-flash'
+            self.model = genai.GenerativeModel(self.model_name)
         self.config = config
+    
+    def update_model(self, model_name: str) -> None:
+        """Update the model being used by this agent"""
+        try:
+            self.model = genai.GenerativeModel(model_name)
+            self.model_name = model_name
+        except Exception as e:
+            raise GeminiAPIError(f"Failed to load model {model_name}: {str(e)}")
     
     def _call_llm(self, prompt: str, history: List[Dict]) -> str:
         """
@@ -45,7 +56,7 @@ class GeminiAgent(BaseAgent):
             # Log the request
             self.step_counter += 1
             if self.logger:
-                self.logger.log_llm_prompt(self.step_counter, prompt, "Gemini")
+                self.logger.log_llm_prompt(self.step_counter, prompt, self.model_name)
             
             # Gemini uses a different message format
             # We'll use generate_content with a combined prompt

@@ -34,6 +34,7 @@ class RedTeamSystem:
         self.input_handler = None
         self.available_ollama_models = []
         self.truncation_enabled = True
+        self.max_iterations = 10  # Default max iterations for agents
     
     def initialize(self):
         """Initialize the system"""
@@ -119,7 +120,7 @@ This system helps you solve CTF challenges using AI agents.
 • [cyan]/agent <name>[/cyan]  - Switch agent (gemini, ollama)
 • [cyan]/model <name>[/cyan]  - Select LLM model
 • [cyan]/mode <name>[/cyan]   - Switch mode (web-ctf)
-• [cyan]/setting <name> <value>[/cyan] - Configure settings
+• [cyan]/setting <name> <value>[/cyan] - Configure settings (truncate, max-iterations)
 • [cyan]/help[/cyan]          - Show detailed help
 • [cyan]/clear[/cyan]         - Clear screen
 • [cyan]/exit[/cyan]          - Exit program
@@ -142,6 +143,7 @@ This system helps you solve CTF challenges using AI agents.
                 self.config,
                 self.tool_registry,
                 self.display,
+                max_iterations=self.max_iterations,
                 logger=self.logger
             )
             self.current_agent_type = 'gemini'
@@ -163,6 +165,7 @@ This system helps you solve CTF challenges using AI agents.
                 self.config,
                 self.tool_registry,
                 self.display,
+                max_iterations=self.max_iterations,
                 logger=self.logger
             )
             self.current_agent_type = 'ollama'
@@ -222,6 +225,11 @@ This system helps you solve CTF challenges using AI agents.
                 return False
         
         self.current_model = model_name
+        
+        # Update the agent's model
+        if self.current_agent:
+            self.current_agent.update_model(model_name)
+        
         self.console.print(f"[green]✓[/green] Model selected: {model_name}")
         self.logger.log_user_input(f"Model selected: {model_name}")
         return True
@@ -229,9 +237,9 @@ This system helps you solve CTF challenges using AI agents.
     def configure_setting(self, setting_name: str, value: str) -> bool:
         """Configure a setting"""
         setting_name = setting_name.lower()
-        value = value.lower()
         
         if setting_name == 'truncate':
+            value = value.lower()
             if value == 'on':
                 self.truncation_enabled = True
                 self.console.print("[green]✓[/green] Response truncation: ON")
@@ -248,10 +256,36 @@ This system helps you solve CTF challenges using AI agents.
             self.logger.log_user_input(f"Setting changed: truncate={value}")
             return True
         
+        elif setting_name == 'max-iterations':
+            try:
+                iterations = int(value)
+                if iterations < 1 or iterations > 100:
+                    self.display.print_error(
+                        f"Invalid value for max-iterations: {value}",
+                        "Valid range: 1-100 iterations"
+                    )
+                    return False
+                
+                self.max_iterations = iterations
+                
+                # Update current agent if one is selected
+                if self.current_agent:
+                    self.current_agent.max_iterations = iterations
+                
+                self.console.print(f"[green]✓[/green] Max iterations set to: {iterations}")
+                self.logger.log_user_input(f"Setting changed: max-iterations={iterations}")
+                return True
+            except ValueError:
+                self.display.print_error(
+                    f"Invalid value for max-iterations: {value}",
+                    "Please provide a number between 1-100"
+                )
+                return False
+        
         else:
             self.display.print_error(
                 f"Unknown setting: {setting_name}",
-                f"Available settings: {', '.join(CommandParser.get_available_commands()['setting'])}"
+                f"Available settings: truncate, max-iterations"
             )
             return False
 
@@ -362,7 +396,7 @@ This system helps you solve CTF challenges using AI agents.
                         else:
                             self.display.print_error(
                                 "Invalid setting syntax",
-                                "Use: /setting truncate on|off"
+                                "Use: /setting <truncate|max-iterations> <value>"
                             )
                     
                     elif command.type == 'clear':

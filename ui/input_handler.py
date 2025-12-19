@@ -75,11 +75,14 @@ class CommandCompleter(Completer):
         elif command == '/setting':
             if len(parts) == 1:
                 yield Completion('truncate', start_position=0)
+                yield Completion('max-iterations', start_position=0)
             elif len(parts) == 2:
                 current = parts[1]
                 if not text.endswith(' '):
                     if 'truncate'.startswith(current.lower()):
                         yield Completion('truncate', start_position=-len(current))
+                    elif 'max-iterations'.startswith(current.lower()):
+                        yield Completion('max-iterations', start_position=-len(current))
                 else:
                     # Show values
                     if current.lower() == 'truncate':

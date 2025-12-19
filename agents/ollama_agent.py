@@ -17,19 +17,24 @@ class OllamaAgent(BaseAgent):
         config: AgentConfig,
         tool_registry: ToolRegistry,
         display: DisplayManager,
+        max_iterations: int = 10,
         logger = None
     ):
         super().__init__(
             name="Ollama Red Team Agent",
             tool_registry=tool_registry,
             display=display,
-            max_iterations=10,
+            max_iterations=max_iterations,
             logger=logger
         )
         
         self.base_url = config.ollama_base_url
         self.model = config.ollama_model
         self.config = config
+    
+    def update_model(self, model_name: str) -> None:
+        """Update the model being used by this agent"""
+        self.model = model_name
     
     def _call_llm(self, prompt: str, history: List[Dict]) -> str:
         """

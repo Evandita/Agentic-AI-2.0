@@ -20,7 +20,7 @@ class CommandParser:
         '/agent': r'^/agent\s+(gemini|ollama)$',
         '/model': r'^/model\s+(.+)$',
         '/mode': r'^/mode\s+(web-ctf|web_ctf|webctf)$',
-        '/setting': r'^/setting\s+(\w+)\s+(\w+)$',
+        '/setting': r'^/setting\s+([\w-]+)\s+(.+)$',
         '/help': r'^/help$',
         '/clear': r'^/clear$',
         '/exit': r'^/exit$',
@@ -35,7 +35,8 @@ class CommandParser:
     ]
     
     SETTINGS = {
-        'truncate': ['on', 'off']
+        'truncate': ['on', 'off'],
+        'max-iterations': ['1', '5', '10', '15', '20', '50']
     }
     
     @classmethod
@@ -76,13 +77,15 @@ class CommandParser:
         elif input_text.startswith('/setting'):
             parts = input_text.split()
             if len(parts) == 1:
-                return "Usage: /setting <truncate> <on|off>"
+                return "Usage: /setting <truncate|max-iterations> <value>"
             elif len(parts) == 2:
                 setting = parts[1]
                 if setting == 'truncate':
                     return "Usage: /setting truncate <on|off>"
+                elif setting == 'max-iterations':
+                    return "Usage: /setting max-iterations <1-100>"
                 else:
-                    return f"Unknown setting: {setting}. Available: truncate"
+                    return f"Unknown setting: {setting}. Available: truncate, max-iterations"
         
         return None
     
