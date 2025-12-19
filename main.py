@@ -8,8 +8,8 @@ from rich.console import Console
 from rich.prompt import Prompt, Confirm
 from rich.panel import Panel
 
-from config import load_config, check_api_availability
-from ui import DisplayManager, CommandParser
+from config import load_config, check_api_availability, get_available_ollama_models
+from ui import DisplayManager, CommandParser, EnhancedInput
 from agents import GeminiAgent, OllamaAgent
 from tools import create_tool_registry
 from modes import get_mode, list_modes
@@ -26,9 +26,14 @@ class RedTeamSystem:
         self.display = None
         self.availability = {}
         self.current_agent = None
+        self.current_agent_type = None
+        self.current_model = None
         self.current_mode = None
         self.tool_registry = None
         self.logger = None
+        self.input_handler = None
+        self.available_ollama_models = []
+        self.truncation_enabled = True
     
     def initialize(self):
         """Initialize the system"""
@@ -47,6 +52,14 @@ class RedTeamSystem:
         # Check API availability
         self.console.print("[blue]Checking API availability...[/blue]")
         self.availability = check_api_availability(self.config)
+        
+        # Detect available Ollama models if available
+        if self.availability['ollama']:
+            self.console.print("[blue]Detecting available Ollama models...[/blue]")
+            self.available_ollama_models = get_available_ollama_models(self.config.ollama_base_url)
+        
+        # Initialize enhanced input with autocomplete (pass detected models)
+        self.input_handler = EnhancedInput(self.available_ollama_models)
         
         # Display status
         self._display_system_status()
@@ -76,9 +89,15 @@ class RedTeamSystem:
             status_lines.append("[yellow]⚠[/yellow] Gemini API: Not configured")
         
         if self.availability['ollama']:
-            status_lines.append(
-                f"[green]✓[/green] Ollama: Running ({self.config.ollama_model})"
-            )
+            if self.available_ollama_models:
+                models_str = ", ".join(self.available_ollama_models[:3])
+                if len(self.available_ollama_models) > 3:
+                    models_str += f", +{len(self.available_ollama_models) - 3} more"
+                status_lines.append(
+                    f"[green]✓[/green] Ollama: Running\n  [dim]Available models:[/dim] {models_str}"
+                )
+            else:
+                status_lines.append("[yellow]⚠[/yellow] Ollama: Running but no models found")
         else:
             status_lines.append("[yellow]⚠[/yellow] Ollama: Not available")
         
@@ -92,10 +111,18 @@ This system helps you solve CTF challenges using AI agents.
 
 [yellow]Quick Start:[/yellow]
 1. Select an agent: [cyan]/agent gemini[/cyan] or [cyan]/agent ollama[/cyan]
-2. Select a mode: [cyan]/mode web-ctf[/cyan]
-3. Describe your challenge and let the AI solve it!
+2. Select a model: [cyan]/model <model-name>[/cyan] (optional, uses default if not set)
+3. Select a mode: [cyan]/mode web-ctf[/cyan]
+4. Describe your challenge and let the AI solve it!
 
-Type [cyan]/help[/cyan] for more commands.
+[yellow]Available Commands:[/yellow]
+• [cyan]/agent <name>[/cyan]  - Switch agent (gemini, ollama)
+• [cyan]/model <name>[/cyan]  - Select LLM model
+• [cyan]/mode <name>[/cyan]   - Switch mode (web-ctf)
+• [cyan]/setting <name> <value>[/cyan] - Configure settings
+• [cyan]/help[/cyan]          - Show detailed help
+• [cyan]/clear[/cyan]         - Clear screen
+• [cyan]/exit[/cyan]          - Exit program
 """
         self.console.print(Panel(welcome_text, border_style="cyan", padding=(1, 2)))
     
@@ -114,8 +141,11 @@ Type [cyan]/help[/cyan] for more commands.
             self.current_agent = GeminiAgent(
                 self.config,
                 self.tool_registry,
-                self.display
+                self.display,
+                logger=self.logger
             )
+            self.current_agent_type = 'gemini'
+            self.input_handler.set_current_agent('gemini')
             self.console.print("[green]✓[/green] Gemini agent selected")
             self.logger.log_agent_selection("Gemini")
             return True
@@ -125,16 +155,18 @@ Type [cyan]/help[/cyan] for more commands.
                 self.display.print_error(
                     "Ollama not available",
                     f"Please start Ollama and pull the model:\n"
-                    f"  ollama serve\n"
-                    f"  ollama pull {self.config.ollama_model}"
+                    f"  ollama serve"
                 )
                 return False
             
             self.current_agent = OllamaAgent(
                 self.config,
                 self.tool_registry,
-                self.display
+                self.display,
+                logger=self.logger
             )
+            self.current_agent_type = 'ollama'
+            self.input_handler.set_current_agent('ollama')
             self.console.print("[green]✓[/green] Ollama agent selected")
             self.logger.log_agent_selection("Ollama")
             return True
@@ -161,6 +193,68 @@ Type [cyan]/help[/cyan] for more commands.
         self.console.print(f"[green]✓[/green] {mode.display_name} mode selected")
         self.logger.log_mode_selection(mode.name)
         return True
+    
+    def select_model(self, model_name: str) -> bool:
+        """Select a model for the current agent"""
+        if not self.current_agent_type:
+            self.display.print_error(
+                "No agent selected",
+                "Please select an agent first with: /agent gemini or /agent ollama"
+            )
+            return False
+        
+        # Validate model based on agent type
+        if self.current_agent_type == 'gemini':
+            available_models = CommandParser.get_gemini_models()
+            if model_name not in available_models:
+                self.display.print_error(
+                    f"Unknown Gemini model: {model_name}",
+                    f"Available models: {', '.join(available_models)}"
+                )
+                return False
+        
+        elif self.current_agent_type == 'ollama':
+            if model_name not in self.available_ollama_models:
+                self.display.print_error(
+                    f"Model not available: {model_name}",
+                    f"Available models: {', '.join(self.available_ollama_models)}"
+                )
+                return False
+        
+        self.current_model = model_name
+        self.console.print(f"[green]✓[/green] Model selected: {model_name}")
+        self.logger.log_user_input(f"Model selected: {model_name}")
+        return True
+    
+    def configure_setting(self, setting_name: str, value: str) -> bool:
+        """Configure a setting"""
+        setting_name = setting_name.lower()
+        value = value.lower()
+        
+        if setting_name == 'truncate':
+            if value == 'on':
+                self.truncation_enabled = True
+                self.console.print("[green]✓[/green] Response truncation: ON")
+            elif value == 'off':
+                self.truncation_enabled = False
+                self.console.print("[green]✓[/green] Response truncation: OFF")
+            else:
+                self.display.print_error(
+                    f"Invalid value for truncate: {value}",
+                    "Available values: on, off"
+                )
+                return False
+            
+            self.logger.log_user_input(f"Setting changed: truncate={value}")
+            return True
+        
+        else:
+            self.display.print_error(
+                f"Unknown setting: {setting_name}",
+                f"Available settings: {', '.join(CommandParser.get_available_commands()['setting'])}"
+            )
+            return False
+
     
     def run_agent(self, objective: str):
         """Run the agent with the given objective"""
@@ -219,8 +313,8 @@ Type [cyan]/help[/cyan] for more commands.
         
         while True:
             try:
-                # Get user input
-                user_input = Prompt.ask("\n[cyan]>[/cyan]").strip()
+                # Get user input with suggestions
+                user_input = self.input_handler.prompt_with_suggestions("\n> ").strip()
                 
                 if not user_input:
                     continue
@@ -232,7 +326,12 @@ Type [cyan]/help[/cyan] for more commands.
                     command = CommandParser.parse(user_input)
                     
                     if command is None:
-                        self.console.print("[red]Unknown command.[/red] Type /help for available commands.")
+                        # Try to provide helpful hint for incomplete commands
+                        hint = CommandParser.get_command_hint(user_input)
+                        if hint:
+                            self.console.print(f"[yellow]{hint}[/yellow]")
+                        else:
+                            self.console.print("[red]Unknown command.[/red] Type /help for available commands.")
                         continue
                     
                     # Handle commands
@@ -242,8 +341,29 @@ Type [cyan]/help[/cyan] for more commands.
                     elif command.type == 'agent':
                         self.select_agent(command.value)
                     
+                    elif command.type == 'model':
+                        if command.value:
+                            self.select_model(command.value)
+                        else:
+                            models = self.input_handler.get_model_suggestions()
+                            if models:
+                                self.console.print("[yellow]Available models:[/yellow]")
+                                for m in models:
+                                    self.console.print(f"  {m}")
+                            else:
+                                self.display.print_error("No models available", "Select an agent first")
+                    
                     elif command.type == 'mode':
                         self.select_mode(command.value)
+                    
+                    elif command.type == 'setting':
+                        if len(command.args) >= 2:
+                            self.configure_setting(command.args[0], command.args[1])
+                        else:
+                            self.display.print_error(
+                                "Invalid setting syntax",
+                                "Use: /setting truncate on|off"
+                            )
                     
                     elif command.type == 'clear':
                         self.console.clear()

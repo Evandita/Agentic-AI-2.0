@@ -89,3 +89,32 @@ def check_api_availability(config: AgentConfig) -> dict[str, bool]:
         availability['ollama'] = False
     
     return availability
+
+
+def get_available_ollama_models(ollama_base_url: str = "http://localhost:11434") -> list[str]:
+    """
+    Fetch list of available Ollama models
+    
+    Returns:
+        List of model names, or empty list if Ollama is not available
+    """
+    try:
+        import requests
+        response = requests.get(
+            f"{ollama_base_url}/api/tags",
+            timeout=2
+        )
+        if response.status_code == 200:
+            models = response.json().get('models', [])
+            # Extract clean model names (remove tags like :latest)
+            model_names = []
+            for m in models:
+                name = m.get('name', '')
+                # Keep the name as-is but store it
+                model_names.append(name)
+            return sorted(model_names)
+    except Exception:
+        pass
+    
+    return []
+

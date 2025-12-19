@@ -16,20 +16,25 @@ class GeminiAgent(BaseAgent):
         self,
         config: AgentConfig,
         tool_registry: ToolRegistry,
-        display: DisplayManager
+        display: DisplayManager,
+        logger = None
     ):
         super().__init__(
             name="Gemini Red Team Agent",
             tool_registry=tool_registry,
             display=display,
-            max_iterations=10
+            max_iterations=10,
+            logger=logger
         )
         
         # Configure Gemini
         genai.configure(api_key=config.gemini_api_key)
         
-        # Use Gemini 1.5 Flash for speed
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        # Use Gemini 2.0 Flash by default, fall back to 1.5
+        try:
+            self.model = genai.GenerativeModel('gemini-2.0-flash')
+        except:
+            self.model = genai.GenerativeModel('gemini-1.5-flash')
         self.config = config
     
     def _call_llm(self, prompt: str, history: List[Dict]) -> str:
@@ -37,6 +42,11 @@ class GeminiAgent(BaseAgent):
         Call Gemini API synchronously
         """
         try:
+            # Log the request
+            self.step_counter += 1
+            if self.logger:
+                self.logger.log_llm_prompt(self.step_counter, prompt, "Gemini")
+            
             # Gemini uses a different message format
             # We'll use generate_content with a combined prompt
             
@@ -63,6 +73,10 @@ class GeminiAgent(BaseAgent):
             
             if not response.text:
                 raise GeminiAPIError("Empty response from Gemini")
+            
+            # Log the response
+            if self.logger:
+                self.logger.log_llm_response(self.step_counter, response.text)
             
             return response.text
             

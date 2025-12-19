@@ -60,6 +60,25 @@ class SessionLogger:
         """Log user input"""
         self.logger.info(f"User input: {user_input}")
     
+    def log_llm_prompt(self, step: int, prompt: str, model: str = ""):
+        """Log LLM prompt/request (full, no truncation)"""
+        model_info = f" [{model}]" if model else ""
+        self.logger.info(f"\n=== LLM REQUEST{model_info} (Step {step}) ===")
+        self.logger.info(prompt)
+        self.logger.info("=== END REQUEST ===\n")
+    
+    def log_llm_response(self, step: int, response: str, full_response: str = None):
+        """Log LLM response (full, no truncation)"""
+        self.logger.info(f"\n=== LLM RESPONSE (Step {step}) ===")
+        self.logger.info(response)
+        self.logger.info("=== END RESPONSE ===\n")
+        
+        # Store full response if provided (with full content)
+        if full_response and len(full_response) != len(response):
+            self.logger.info(f"\n=== FULL LLM RESPONSE (Step {step}) ===")
+            self.logger.info(full_response)
+            self.logger.info("=== END FULL RESPONSE ===\n")
+    
     def log_interaction(
         self,
         objective: str,

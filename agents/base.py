@@ -31,13 +31,16 @@ class BaseAgent:
         name: str,
         tool_registry: ToolRegistry,
         display: DisplayManager,
-        max_iterations: int = 10
+        max_iterations: int = 10,
+        logger: Optional[Any] = None
     ):
         self.name = name
         self.tools = tool_registry
         self.display = display
         self.max_iterations = max_iterations
         self.history: List[AgentStep] = []
+        self.logger = logger
+        self.step_counter = 0
     
     def run(self, objective: str, mode_context: str = "") -> Dict[str, Any]:
         """

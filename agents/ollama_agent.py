@@ -16,13 +16,15 @@ class OllamaAgent(BaseAgent):
         self,
         config: AgentConfig,
         tool_registry: ToolRegistry,
-        display: DisplayManager
+        display: DisplayManager,
+        logger = None
     ):
         super().__init__(
             name="Ollama Red Team Agent",
             tool_registry=tool_registry,
             display=display,
-            max_iterations=10
+            max_iterations=10,
+            logger=logger
         )
         
         self.base_url = config.ollama_base_url
@@ -34,6 +36,11 @@ class OllamaAgent(BaseAgent):
         Call Ollama API synchronously
         """
         try:
+            # Log the request
+            self.step_counter += 1
+            if self.logger:
+                self.logger.log_llm_prompt(self.step_counter, prompt, self.model)
+            
             # Build messages for Ollama
             messages = []
             
@@ -80,7 +87,13 @@ class OllamaAgent(BaseAgent):
             if 'message' not in result or 'content' not in result['message']:
                 raise OllamaConnectionError("Invalid response format from Ollama")
             
-            return result['message']['content']
+            response_text = result['message']['content']
+            
+            # Log the response
+            if self.logger:
+                self.logger.log_llm_response(self.step_counter, response_text)
+            
+            return response_text
             
         except requests.exceptions.ConnectionError:
             raise OllamaConnectionError(
