@@ -77,15 +77,17 @@ class CommandParser:
         elif input_text.startswith('/setting'):
             parts = input_text.split()
             if len(parts) == 1:
-                return "Usage: /setting <truncate|max-iterations> <value>"
+                return "Usage: /setting <truncate|max-iterations|loop-detection> <value>"
             elif len(parts) == 2:
                 setting = parts[1]
                 if setting == 'truncate':
                     return "Usage: /setting truncate <on|off>"
                 elif setting == 'max-iterations':
                     return "Usage: /setting max-iterations <1-100>"
+                elif setting == 'loop-detection':
+                    return "Usage: /setting loop-detection <on|off>"
                 else:
-                    return f"Unknown setting: {setting}. Available: truncate, max-iterations"
+                    return f"Unknown setting: {setting}. Available: truncate, max-iterations, loop-detection"
         
         return None
     

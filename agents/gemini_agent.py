@@ -18,14 +18,16 @@ class GeminiAgent(BaseAgent):
         tool_registry: ToolRegistry,
         display: DisplayManager,
         max_iterations: int = 10,
-        logger = None
+        logger = None,
+        loop_detection_enabled: bool = True
     ):
         super().__init__(
             name="Gemini Red Team Agent",
             tool_registry=tool_registry,
             display=display,
             max_iterations=max_iterations,
-            logger=logger
+            logger=logger,
+            loop_detection_enabled=loop_detection_enabled
         )
         
         # Configure Gemini
@@ -59,16 +61,18 @@ class GeminiAgent(BaseAgent):
                 self.logger.log_llm_prompt(self.step_counter, prompt, self.model_name)
             
             # Gemini uses a different message format
-            # We'll use generate_content with a combined prompt
+            # We'll use generate_content with a combined prompt that includes conversation history
             
             # Combine history and new prompt
             full_prompt = ""
             
             for msg in history:
-                if msg['role'] == 'assistant':
-                    full_prompt += f"{msg['content']}\n\n"
+                if msg['role'] == 'user':
+                    full_prompt += f"User: {msg['content']}\n\n"
+                elif msg['role'] == 'assistant':
+                    full_prompt += f"Assistant: {msg['content']}\n\n"
             
-            full_prompt += prompt
+            full_prompt += f"User: {prompt}\n\nAssistant:"
             
             # Generate response
             response = self.model.generate_content(
@@ -78,7 +82,7 @@ class GeminiAgent(BaseAgent):
                     max_output_tokens=512,  # Shorter to prevent multi-step planning
                     top_p=0.9,
                     top_k=40,
-                    stop_sequences=['\nThought:', '\n\nThought:', 'Observation:']  # Stop at next step
+                    stop_sequences=['\nThought:', '\n\nThought:', 'Observation:', '\nUser:']  # Stop at next step or user message
                 )
             )
             

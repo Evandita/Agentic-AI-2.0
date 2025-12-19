@@ -18,14 +18,16 @@ class OllamaAgent(BaseAgent):
         tool_registry: ToolRegistry,
         display: DisplayManager,
         max_iterations: int = 10,
-        logger = None
+        logger = None,
+        loop_detection_enabled: bool = True
     ):
         super().__init__(
             name="Ollama Red Team Agent",
             tool_registry=tool_registry,
             display=display,
             max_iterations=max_iterations,
-            logger=logger
+            logger=logger,
+            loop_detection_enabled=loop_detection_enabled
         )
         
         self.base_url = config.ollama_base_url

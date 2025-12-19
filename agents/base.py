@@ -32,7 +32,8 @@ class BaseAgent:
         tool_registry: ToolRegistry,
         display: DisplayManager,
         max_iterations: int = 10,
-        logger: Optional[Any] = None
+        logger: Optional[Any] = None,
+        loop_detection_enabled: bool = True
     ):
         self.name = name
         self.tools = tool_registry
@@ -41,6 +42,7 @@ class BaseAgent:
         self.history: List[AgentStep] = []
         self.logger = logger
         self.step_counter = 0
+        self.loop_detection_enabled = loop_detection_enabled
     
     def run(self, objective: str, mode_context: str = "") -> Dict[str, Any]:
         """
@@ -66,13 +68,28 @@ class BaseAgent:
                 if iteration == 0:
                     prompt = f"{system_prompt}\n\nObjective: {objective}\n\nLet's solve this step by step."
                 else:
+                    # Check if there were recent errors in conversation history
+                    recent_errors = []
+                    # Get errors that occurred after the last assistant message
+                    found_last_assistant = False
+                    for msg in reversed(conversation_history):
+                        if msg['role'] == 'assistant':
+                            found_last_assistant = True
+                            break
+                        elif msg['role'] == 'user' and msg['content'].startswith('Error:'):
+                            recent_errors.insert(0, msg['content'])
+                    
+                    error_context = ""
+                    if recent_errors:
+                        error_context = "\n\n".join(recent_errors) + "\n\n"
+                    
                     # Add previous observation with format reminder
                     if len(self.history) > 0:
                         last_step = self.history[-1]
-                        prompt = f"Observation: {last_step.observation}\n\nWhat's your next step? Use the format:\nThought: [reasoning]\nAction: [tool_name]\nAction Input: {{\"param\": \"value\"}}\n\nOr if you have the answer:\nThought: [reasoning]\nFinal Answer: [answer]"
+                        prompt = f"{error_context}Observation: {last_step.observation}\n\nWhat's your next step? Use the format:\nThought: [reasoning]\nAction: [tool_name]\nAction Input: {{\"param\": \"value\"}}\n\nOr if you have the answer:\nThought: [reasoning]\nFinal Answer: [answer]"
                     else:
                         # No history yet, re-prompt with objective
-                        prompt = f"Objective: {objective}\n\nYou MUST use this format:\nThought: [reasoning]\nAction: [tool_name]\nAction Input: {{\"param\": \"value\"}}"
+                        prompt = f"{error_context}Objective: {objective}\n\nYou MUST use this format:\nThought: [reasoning]\nAction: [tool_name]\nAction Input: {{\"param\": \"value\"}}"
                 
                 # Get response from LLM
                 response = self._call_llm(prompt, conversation_history)
@@ -197,6 +214,11 @@ class BaseAgent:
             if not self.tools.has_tool(tool_name):
                 return f"Error: Unknown tool '{tool_name}'. Available tools: {', '.join(self.tools.get_tool_names())}"
             
+            # Validate parameters
+            validation_error = self._validate_tool_parameters(tool_name, tool_input)
+            if validation_error:
+                return validation_error
+            
             result = self.tools.execute(tool_name, **tool_input)
             return str(result)
             
@@ -204,6 +226,74 @@ class BaseAgent:
             return f"Error: Invalid parameters for {tool_name}. {str(e)}"
         except Exception as e:
             return f"Error executing {tool_name}: {str(e)}"
+    
+    def _validate_tool_parameters(self, tool_name: str, tool_input: Dict) -> Optional[str]:
+        """Validate tool parameters against schema"""
+        tool_def = self.tools.tools[tool_name]
+        schema = tool_def.parameters
+        
+        # Check required parameters
+        required = schema.get('required', [])
+        for param in required:
+            if param not in tool_input:
+                return f"Error: Missing required parameter '{param}' for tool '{tool_name}'"
+        
+        # Check parameter types and values
+        properties = schema.get('properties', {})
+        for param, value in tool_input.items():
+            if param not in properties:
+                return f"Error: Unknown parameter '{param}' for tool '{tool_name}'"
+            
+            param_schema = properties[param]
+            
+            # Check oneOf types (for parameters that can be multiple types)
+            if 'oneOf' in param_schema:
+                valid_types = []
+                for type_option in param_schema['oneOf']:
+                    option_type = type_option.get('type')
+                    valid_types.append(option_type)
+                
+                value_valid = False
+                for valid_type in valid_types:
+                    if valid_type == 'string' and isinstance(value, str):
+                        value_valid = True
+                        break
+                    elif valid_type == 'object' and isinstance(value, dict):
+                        value_valid = True
+                        break
+                    elif valid_type == 'integer' and isinstance(value, int):
+                        value_valid = True
+                        break
+                    elif valid_type == 'boolean' and isinstance(value, bool):
+                        value_valid = True
+                        break
+                
+                if not value_valid:
+                    return f"Error: Parameter '{param}' must be one of {valid_types}, got {type(value).__name__}"
+            # Basic type checking for simple type parameters
+            elif 'type' in param_schema:
+                param_type = param_schema['type']
+                if param_type == 'string' and not isinstance(value, str):
+                    return f"Error: Parameter '{param}' must be a string, got {type(value).__name__}"
+                elif param_type == 'integer' and not isinstance(value, int):
+                    return f"Error: Parameter '{param}' must be an integer, got {type(value).__name__}"
+                elif param_type == 'boolean' and not isinstance(value, bool):
+                    return f"Error: Parameter '{param}' must be a boolean, got {type(value).__name__}"
+                elif param_type == 'object' and not isinstance(value, dict):
+                    return f"Error: Parameter '{param}' must be an object, got {type(value).__name__}"
+            
+            # Check enum values
+            if 'enum' in param_schema:
+                allowed_values = param_schema['enum']
+                if value not in allowed_values:
+                    return f"Error: Parameter '{param}' must be one of {allowed_values}, got '{value}'"
+            
+            # URL validation for url parameters
+            if param == 'url' and param_type == 'string':
+                if not isinstance(value, str) or not value.startswith(('http://', 'https://')):
+                    return f"Error: Parameter 'url' must be a valid HTTP/HTTPS URL"
+        
+        return None  # No errors
     
     def _parse_response(self, response: str) -> Dict[str, Any]:
         """
@@ -358,6 +448,9 @@ class BaseAgent:
     
     def _check_infinite_loop(self) -> bool:
         """Check if agent is repeating the same actions"""
+        if not self.loop_detection_enabled:
+            return False
+        
         if len(self.history) < 3:
             return False
         

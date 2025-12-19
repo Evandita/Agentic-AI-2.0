@@ -35,6 +35,7 @@ class RedTeamSystem:
         self.available_ollama_models = []
         self.truncation_enabled = True
         self.max_iterations = 10  # Default max iterations for agents
+        self.loop_detection_enabled = True  # Enable loop detection by default
     
     def initialize(self):
         """Initialize the system"""
@@ -120,7 +121,7 @@ This system helps you solve CTF challenges using AI agents.
 • [cyan]/agent <name>[/cyan]  - Switch agent (gemini, ollama)
 • [cyan]/model <name>[/cyan]  - Select LLM model
 • [cyan]/mode <name>[/cyan]   - Switch mode (web-ctf)
-• [cyan]/setting <name> <value>[/cyan] - Configure settings (truncate, max-iterations)
+• [cyan]/setting <name> <value>[/cyan] - Configure settings (truncate, max-iterations, loop-detection)
 • [cyan]/help[/cyan]          - Show detailed help
 • [cyan]/clear[/cyan]         - Clear screen
 • [cyan]/exit[/cyan]          - Exit program
@@ -144,7 +145,8 @@ This system helps you solve CTF challenges using AI agents.
                 self.tool_registry,
                 self.display,
                 max_iterations=self.max_iterations,
-                logger=self.logger
+                logger=self.logger,
+                loop_detection_enabled=self.loop_detection_enabled
             )
             self.current_agent_type = 'gemini'
             self.input_handler.set_current_agent('gemini')
@@ -166,7 +168,8 @@ This system helps you solve CTF challenges using AI agents.
                 self.tool_registry,
                 self.display,
                 max_iterations=self.max_iterations,
-                logger=self.logger
+                logger=self.logger,
+                loop_detection_enabled=self.loop_detection_enabled
             )
             self.current_agent_type = 'ollama'
             self.input_handler.set_current_agent('ollama')
@@ -282,10 +285,32 @@ This system helps you solve CTF challenges using AI agents.
                 )
                 return False
         
+        elif setting_name == 'loop-detection':
+            value = value.lower()
+            if value == 'on':
+                self.loop_detection_enabled = True
+                self.console.print("[green]✓[/green] Loop detection: ON")
+            elif value == 'off':
+                self.loop_detection_enabled = False
+                self.console.print("[green]✓[/green] Loop detection: OFF")
+            else:
+                self.display.print_error(
+                    f"Invalid value for loop-detection: {value}",
+                    "Available values: on, off"
+                )
+                return False
+            
+            # Update current agent if one is selected
+            if self.current_agent:
+                self.current_agent.loop_detection_enabled = self.loop_detection_enabled
+            
+            self.logger.log_user_input(f"Setting changed: loop-detection={value}")
+            return True
+        
         else:
             self.display.print_error(
                 f"Unknown setting: {setting_name}",
-                f"Available settings: truncate, max-iterations"
+                f"Available settings: truncate, max-iterations, loop-detection"
             )
             return False
 

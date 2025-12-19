@@ -76,6 +76,7 @@ class CommandCompleter(Completer):
             if len(parts) == 1:
                 yield Completion('truncate', start_position=0)
                 yield Completion('max-iterations', start_position=0)
+                yield Completion('loop-detection', start_position=0)
             elif len(parts) == 2:
                 current = parts[1]
                 if not text.endswith(' '):
@@ -83,15 +84,24 @@ class CommandCompleter(Completer):
                         yield Completion('truncate', start_position=-len(current))
                     elif 'max-iterations'.startswith(current.lower()):
                         yield Completion('max-iterations', start_position=-len(current))
+                    elif 'loop-detection'.startswith(current.lower()):
+                        yield Completion('loop-detection', start_position=-len(current))
                 else:
                     # Show values
                     if current.lower() == 'truncate':
+                        for val in ['on', 'off']:
+                            yield Completion(val, start_position=0)
+                    elif current.lower() == 'loop-detection':
                         for val in ['on', 'off']:
                             yield Completion(val, start_position=0)
             elif len(parts) == 3 and not text.endswith(' '):
                 setting_name = parts[1].lower()
                 current = parts[2]
                 if setting_name == 'truncate':
+                    for val in ['on', 'off']:
+                        if val.startswith(current.lower()):
+                            yield Completion(val, start_position=-len(current))
+                elif setting_name == 'loop-detection':
                     for val in ['on', 'off']:
                         if val.startswith(current.lower()):
                             yield Completion(val, start_position=-len(current))
