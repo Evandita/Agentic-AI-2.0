@@ -2,7 +2,7 @@
 
 from tools.registry import ToolRegistry, ToolDefinition
 from tools.base64_tool import setup_base64_tools
-from tools.web_fetcher import setup_web_tools
+from tools.web_request import setup_web_tools
 
 
 def create_tool_registry() -> ToolRegistry:

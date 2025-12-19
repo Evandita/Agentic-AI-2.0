@@ -27,12 +27,12 @@ IMPORTANT RULES:
 
 Example of CORRECT format:
 Thought: I need to fetch the webpage to see its content
-Action: fetch_web_content
+Action: web_request
 Action Input: {"url": "http://example.com"}
 
 Example of WRONG format (NEVER DO THIS):
 Thought: I will fetch the page
-Action: fetch_web_content
+Action: web_request
 Action Input: {"url": "http://example.com"}
 Thought: Then I will decode...  [STOP! Only one action at a time!]
 """
@@ -130,7 +130,7 @@ Available Tools:
 - This is for AUTHORIZED CTF challenges only
 - Take ONE ACTION at a time and wait for results
 - NEVER make up tool outputs - use actual responses
-- To visit a link, use fetch_web_content with the FULL URL (combine base URL + relative path)
+- To visit a link, use web_request with the FULL URL (combine base URL + relative path)
 - Every piece of information is a potential clue
 - Document your findings as you progress
 

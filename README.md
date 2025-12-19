@@ -102,7 +102,7 @@ Agentic AI 2.0/
 ├── tools/              # Tool registry and implementations
 │   ├── registry.py     # Tool registration system
 │   ├── base64_tool.py  # Base64 encoding/decoding
-│   └── web_fetcher.py  # Web content fetching
+│   └── web_request.py  # Web content fetching
 ├── modes/              # Mode configurations
 │   ├── base.py         # Base mode class
 │   └── web_ctf.py      # Web CTF mode
@@ -125,7 +125,7 @@ Agentic AI 2.0/
 - `base64_encode` - Encode strings to base64
 
 ### Web Tools
-- `fetch_web_content` - Fetch content from URLs with custom headers and methods
+- `web_request` - Fetch content from URLs with custom headers and methods
 
 ## Example Session
 
@@ -144,7 +144,7 @@ Agentic AI 2.0/
 ╰──────────────────────────────────────────────────────╯
 
 ╭─ 🔧 Tool Execution (Step 1) ────────────────────────╮
-│ Tool: fetch_web_content                              │
+│ Tool: web_request                              │
 │                                                       │
 │ Input:                                                │
 │ {                                                     │
@@ -153,7 +153,7 @@ Agentic AI 2.0/
 ╰──────────────────────────────────────────────────────╯
 
 ╭─ 📊 Tool Response (Step 1) ─────────────────────────╮
-│ ✓ fetch_web_content                                  │
+│ ✓ web_request                                  │
 │                                                       │
 │ Status Code: 200                                      │
 │ Content: ...                                          │

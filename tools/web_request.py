@@ -8,7 +8,7 @@ def setup_web_tools(registry: ToolRegistry):
     """Register web fetching tools"""
     
     @registry.register(
-        name="fetch_web_content",
+        name="web_request",
         description="Fetch content from a URL using HTTP GET or POST. Returns the response text, headers, and status code. Useful for analyzing web applications in CTF challenges.",
         parameters={
             "type": "object",
@@ -37,7 +37,7 @@ def setup_web_tools(registry: ToolRegistry):
             "required": ["url"]
         }
     )
-    def fetch_web_content(
+    def web_request(
         url: str,
         method: str = "GET",
         headers: dict = None,

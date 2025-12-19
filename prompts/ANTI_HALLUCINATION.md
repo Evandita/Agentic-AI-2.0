@@ -11,7 +11,7 @@ When using LLMs as agents with tools, they often "hallucinate" by:
 **Example of Hallucination:**
 ```
 Thought: I need to fetch the page
-Action: fetch_web_content
+Action: web_request
 Action Input: {"url": "http://example.com"}
 
 Thought: The response will contain...  [HALLUCINATING!]
@@ -104,7 +104,7 @@ if 'error' in parsed:
 ### Good Behavior ✅
 ```
 Thought: I need to fetch the webpage to see its content
-Action: fetch_web_content
+Action: web_request
 Action Input: {"url": "http://example.com"}
 
 [AGENT STOPS AND WAITS FOR TOOL EXECUTION]
@@ -113,7 +113,7 @@ Action Input: {"url": "http://example.com"}
 ### Bad Behavior ❌ (Prevented)
 ```
 Thought: I'll fetch the page
-Action: fetch_web_content
+Action: web_request
 Action Input: {"url": "http://example.com"}
 
 Thought: Then I'll decode the base64  [STOPPED BY STOP SEQUENCE]
