@@ -17,9 +17,10 @@ class DisplayManager:
     Manages display formatting with dynamic width
     """
     
-    def __init__(self, config: AgentConfig):
+    def __init__(self, config: AgentConfig, truncation_enabled: bool = True):
         self.console = Console()
         self.config = config
+        self.truncation_enabled = truncation_enabled
         
         # Determine effective width
         if config.console_width == "auto":
@@ -37,6 +38,10 @@ class DisplayManager:
                 "For best experience, resize to at least 80 characters wide."
             )
             self.frame_width = 40
+    
+    def set_truncation(self, enabled: bool):
+        """Update truncation setting"""
+        self.truncation_enabled = enabled
     
     def get_panel_width(self) -> int:
         """
@@ -94,9 +99,9 @@ class DisplayManager:
         # Format the input nicely
         if tool_input:
             for key, value in tool_input.items():
-                # Truncate very long values
+                # Truncate very long values if truncation is enabled
                 value_str = str(value)
-                if len(value_str) > 100:
+                if self.truncation_enabled and len(value_str) > 100:
                     value_str = value_str[:100] + "..."
                 content += f"  • {key}: {value_str}\n"
         else:
@@ -113,12 +118,12 @@ class DisplayManager:
         content += f"[bold green]Status:[/bold green] ✓ Executed successfully\n\n"
         content += f"[bold green]Output:[/bold green]\n"
         
-        # Truncate very long responses but show more than before
+        # Truncate very long responses if truncation is enabled
         display_result = result
-        max_length = 1000
-        
-        if len(result) > max_length:
-            display_result = result[:max_length] + f"\n\n[dim]... (truncated, total length: {len(result)} chars)[/dim]"
+        if self.truncation_enabled:
+            max_length = 1000
+            if len(result) > max_length:
+                display_result = result[:max_length] + f"\n\n[dim]... (truncated, total length: {len(result)} chars)[/dim]"
         
         content += display_result
         

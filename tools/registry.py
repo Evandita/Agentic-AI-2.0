@@ -50,6 +50,13 @@ class ToolRegistry:
         tool = self.tools[name]
         return tool.function(**kwargs)
     
+    def get_tool_function(self, name: str) -> Callable:
+        """Get the tool function by name"""
+        if name not in self.tools:
+            raise ValueError(f"Unknown tool: {name}")
+        
+        return self.tools[name].function
+    
     def get_schemas(self) -> list[Dict[str, Any]]:
         """Get tool schemas for LLM function calling"""
         schemas = []
@@ -68,3 +75,9 @@ class ToolRegistry:
     def has_tool(self, name: str) -> bool:
         """Check if tool exists"""
         return name in self.tools
+    
+    def get_tool_function(self, name: str) -> Callable:
+        """Get the tool function by name"""
+        if name not in self.tools:
+            raise ValueError(f"Unknown tool: {name}")
+        return self.tools[name].function

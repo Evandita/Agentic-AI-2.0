@@ -4,6 +4,8 @@ Main entry point for the application
 """
 
 import sys
+import threading
+import signal
 from rich.console import Console
 from rich.prompt import Prompt, Confirm
 from rich.panel import Panel
@@ -36,6 +38,8 @@ class RedTeamSystem:
         self.truncation_enabled = True
         self.max_iterations = 10  # Default max iterations for agents
         self.loop_detection_enabled = True  # Enable loop detection by default
+        self.agent_was_interrupted = False  # Track if agent was interrupted
+        self.last_objective = None  # Track last objective for context preservation
     
     def initialize(self):
         """Initialize the system"""
@@ -46,7 +50,7 @@ class RedTeamSystem:
         self.config = load_config()
         
         # Initialize display
-        self.display = DisplayManager(self.config)
+        self.display = DisplayManager(self.config, self.truncation_enabled)
         
         # Initialize logger
         self.logger = SessionLogger()
@@ -273,9 +277,11 @@ This system helps you solve CTF challenges using AI agents.
             value = value.lower()
             if value == 'on':
                 self.truncation_enabled = True
+                self.display.set_truncation(True)
                 self.console.print("[green]✓[/green] Response truncation: ON")
             elif value == 'off':
                 self.truncation_enabled = False
+                self.display.set_truncation(False)
                 self.console.print("[green]✓[/green] Response truncation: OFF")
             else:
                 self.display.print_error(
@@ -360,12 +366,32 @@ This system helps you solve CTF challenges using AI agents.
             return
         
         try:
-            self.display.print_separator()
-            self.display.print_header(f"Starting: {objective}")
+            # Check if this is a continuation after interrupt
+            if self.agent_was_interrupted and self.last_objective:
+                self.display.print_separator()
+                self.console.print(f"[cyan]Continuing previous task with additional guidance:[/cyan] {objective}")
+                self.display.print_separator()
+                
+                # Add the new instruction as additional context
+                self.current_agent._is_resuming = True
+                self.current_agent._additional_context = f"User guidance: {objective}"
+                # Keep the original objective
+                actual_objective = self.last_objective
+            else:
+                self.display.print_separator()
+                self.display.print_header(f"Starting: {objective}")
+                actual_objective = objective
+                self.last_objective = objective
+            
+            # Reset interrupt flag at start
+            self.agent_was_interrupted = False
+            
+            # Reset agent state
+            self.current_agent.resume()  # Ensure not paused
             
             # Run the agent
             result = self.current_agent.run(
-                objective=objective,
+                objective=actual_objective,
                 mode_context=self.current_mode.get_context()
             )
             
@@ -384,15 +410,20 @@ This system helps you solve CTF challenges using AI agents.
                     "The agent was unable to complete the objective"
                 )
         
-        except RedTeamError as e:
-            self.display.print_error(str(e))
-            self.logger.log_error(str(e))
+        except KeyboardInterrupt:
+            # User pressed Ctrl+C during agent execution
+            self.console.print("\n\n[yellow]⚠ Agent execution interrupted by user[/yellow]")
+            self.console.print("[dim]You can provide guidance to continue, or start a new task[/dim]\n")
+            # Mark as interrupted to preserve context
+            self.agent_was_interrupted = True
         except Exception as e:
             self.display.print_error(
                 f"Unexpected error: {str(e)}",
                 "Please check your configuration and try again"
             )
             self.logger.log_error(f"Unexpected error: {str(e)}")
+            # Clear interrupt flag on error
+            self.agent_was_interrupted = False
     
     def interactive_loop(self):
         """Main interactive loop"""
@@ -455,6 +486,11 @@ This system helps you solve CTF challenges using AI agents.
                     elif command.type == 'clear':
                         self.console.clear()
                         self._display_welcome()
+                        # Also clear agent context
+                        self.agent_was_interrupted = False
+                        self.last_objective = None
+                        if self.current_agent:
+                            self.current_agent.history = []
                     
                     elif command.type in ['exit', 'quit']:
                         if Confirm.ask("\n[yellow]Are you sure you want to exit?[/yellow]"):
@@ -466,8 +502,13 @@ This system helps you solve CTF challenges using AI agents.
                 self.run_agent(user_input)
             
             except KeyboardInterrupt:
-                self.console.print("\n\n[yellow]Interrupted by user[/yellow]")
-                if Confirm.ask("[yellow]Exit?[/yellow]"):
+                # Handle Ctrl+C at the prompt (not during agent execution)
+                self.console.print("\n[yellow]Use /exit to quit the program[/yellow]")
+                continue
+            
+            except EOFError:
+                # Handle Ctrl+D
+                if Confirm.ask("\n[yellow]Exit?[/yellow]"):
                     break
                 continue
             

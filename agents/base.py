@@ -4,6 +4,8 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 import re
 import json
+import threading
+import time
 from tools.registry import ToolRegistry
 from ui.display import DisplayManager
 from errors import ToolExecutionError
@@ -43,6 +45,60 @@ class BaseAgent:
         self.logger = logger
         self.step_counter = 0
         self.loop_detection_enabled = loop_detection_enabled
+        
+        # Pause/resume support
+        self._pause_event = threading.Event()
+        self._pause_event.set()  # Start unpaused
+        self._additional_context = ""
+        self._is_paused = False
+        self._output_suppressed = False
+        self._current_iteration = 0  # Track current iteration across pause/resume
+    
+    def pause(self):
+        """Pause the agent execution"""
+        self._is_paused = True
+        self._output_suppressed = True
+        self._pause_event.clear()
+    
+    def resume(self, additional_context: str = ""):
+        """Resume the agent execution with optional additional context"""
+        self._additional_context = additional_context
+        self._is_paused = False
+        self._output_suppressed = False
+        self._pause_event.set()
+    
+    def is_paused(self) -> bool:
+        """Check if agent is currently paused"""
+        return self._is_paused
+    
+    def _should_suppress_output(self) -> bool:
+        """Check if output should be suppressed due to pause"""
+        return self._is_paused or self._output_suppressed
+    
+    def _print_thinking(self, thought: str, iteration: int):
+        """Print thinking with pause check"""
+        if not self._should_suppress_output():
+            self.display.print_thinking(thought, iteration)
+    
+    def _print_tool_call(self, action_name: str, action_input: dict, iteration: int):
+        """Print tool call with pause check"""
+        if not self._should_suppress_output():
+            self.display.print_tool_call(action_name, action_input, iteration)
+    
+    def _print_tool_response(self, action_name: str, observation: str, iteration: int):
+        """Print tool response with pause check"""
+        if not self._should_suppress_output():
+            self.display.print_tool_response(action_name, observation, iteration)
+    
+    def _print_final_answer(self, final_answer: str):
+        """Print final answer with pause check"""
+        if not self._should_suppress_output():
+            self.display.print_final_answer(final_answer)
+    
+    def _print_error(self, error_msg: str, suggestion: str = None):
+        """Print error with pause check"""
+        if not self._should_suppress_output():
+            self.display.print_error(error_msg, suggestion)
     
     def run(self, objective: str, mode_context: str = "") -> Dict[str, Any]:
         """
@@ -59,10 +115,42 @@ class BaseAgent:
         # Initialize conversation
         system_prompt = self._get_system_prompt(mode_context)
         
-        self.history = []
-        conversation_history = []
+        # Only reset history and conversation if this is a fresh start (not resuming)
+        if not hasattr(self, '_is_resuming') or not self._is_resuming:
+            self.history = []
+            conversation_history = []
+            self._current_iteration = 0
+        else:
+            # We're resuming, so we keep existing history and conversation
+            conversation_history = getattr(self, '_conversation_history', [])
+            self._is_resuming = False
         
-        for iteration in range(self.max_iterations):
+        for iteration in range(self._current_iteration, self.max_iterations):
+            self._current_iteration = iteration + 1
+            
+            # Add additional context at the start if provided (from resume/interrupt)
+            if hasattr(self, '_additional_context') and self._additional_context:
+                conversation_history.append({
+                    "role": "user", 
+                    "content": self._additional_context
+                })
+                self._additional_context = ""  # Clear after use
+            
+            # Check for pause at the start of each iteration
+            if self._is_paused:
+                # Save current state for resume
+                self._conversation_history = conversation_history
+                self._is_resuming = True
+                self._pause_event.wait()  # Wait until resumed
+                # Incorporate additional context if provided
+                if self._additional_context:
+                    # Add the additional context to the conversation
+                    conversation_history.append({
+                        "role": "user", 
+                        "content": f"Additional context from user: {self._additional_context}"
+                    })
+                    self._additional_context = ""  # Clear after use
+            
             try:
                 # Build prompt for this iteration
                 if iteration == 0:
@@ -91,6 +179,29 @@ class BaseAgent:
                         # No history yet, re-prompt with objective
                         prompt = f"{error_context}Objective: {objective}\n\nYou MUST use this format:\nThought: [reasoning]\nAction: [tool_name]\nAction Input: {{\"param\": \"value\"}}"
                 
+                # Check for pause before LLM call
+                if self._is_paused:
+                    self._pause_event.wait()
+                    if self._additional_context:
+                        conversation_history.append({
+                            "role": "user", 
+                            "content": f"Additional context from user: {self._additional_context}"
+                        })
+                        self._additional_context = ""
+                
+                # Check for pause before LLM call
+                if self._is_paused:
+                    # Save current state for resume
+                    self._conversation_history = conversation_history
+                    self._is_resuming = True
+                    self._pause_event.wait()
+                    if self._additional_context:
+                        conversation_history.append({
+                            "role": "user", 
+                            "content": f"Additional context from user: {self._additional_context}"
+                        })
+                        self._additional_context = ""
+                
                 # Get response from LLM
                 response = self._call_llm(prompt, conversation_history)
                 
@@ -107,7 +218,7 @@ class BaseAgent:
                     # Debug: print the actual response
                     print(f"\n[DEBUG] Raw LLM Response:\n{response}\n")
                     
-                    self.display.print_error(
+                    self._print_error(
                         parsed['error'],
                         "Please use the correct format:\nThought: ...\nAction: tool_name\nAction Input: {\"param\": \"value\"}"
                     )
@@ -120,8 +231,8 @@ class BaseAgent:
                 
                 # Check if this is a final answer
                 if parsed['is_final']:
-                    self.display.print_thinking(parsed['thought'], iteration + 1)
-                    self.display.print_final_answer(parsed['final_answer'])
+                    self._print_thinking(parsed['thought'], iteration + 1)
+                    self._print_final_answer(parsed['final_answer'])
                     
                     step = AgentStep(
                         thought=parsed['thought'],
@@ -134,6 +245,9 @@ class BaseAgent:
                     )
                     self.history.append(step)
                     
+                    # Save conversation history
+                    self._conversation_history = conversation_history
+                    
                     return {
                         'success': True,
                         'result': parsed['final_answer'],
@@ -141,18 +255,41 @@ class BaseAgent:
                     }
                 
                 # Display thought
-                self.display.print_thinking(parsed['thought'], iteration + 1)
+                self._print_thinking(parsed['thought'], iteration + 1)
                 
                 # Execute action
                 action_name = parsed['action']
                 action_input = parsed['action_input']
                 
-                self.display.print_tool_call(action_name, action_input, iteration + 1)
+                self._print_tool_call(action_name, action_input, iteration + 1)
+                
+                # Check for pause before tool execution
+                if self._is_paused:
+                    self._pause_event.wait()
+                    if self._additional_context:
+                        conversation_history.append({
+                            "role": "user", 
+                            "content": f"Additional context from user: {self._additional_context}"
+                        })
+                        self._additional_context = ""
+                
+                # Check for pause before tool execution
+                if self._is_paused:
+                    # Save current state for resume
+                    self._conversation_history = conversation_history
+                    self._is_resuming = True
+                    self._pause_event.wait()
+                    if self._additional_context:
+                        conversation_history.append({
+                            "role": "user", 
+                            "content": f"Additional context from user: {self._additional_context}"
+                        })
+                        self._additional_context = ""
                 
                 # Execute tool
                 observation = self._execute_tool(action_name, action_input)
                 
-                self.display.print_tool_response(action_name, observation, iteration + 1)
+                self._print_tool_response(action_name, observation, iteration + 1)
                 
                 # Record step
                 step = AgentStep(
@@ -163,6 +300,9 @@ class BaseAgent:
                     step_number=iteration + 1
                 )
                 self.history.append(step)
+                
+                # Save conversation history for potential resume
+                self._conversation_history = conversation_history
                 
                 # Check for loops
                 if self._check_infinite_loop():
@@ -209,7 +349,10 @@ class BaseAgent:
         return response
     
     def _execute_tool(self, tool_name: str, tool_input: Dict) -> str:
-        """Execute tool synchronously"""
+        """Execute tool with interrupt capability using threading"""
+        import threading
+        import time
+        
         try:
             if not self.tools.has_tool(tool_name):
                 return f"Error: Unknown tool '{tool_name}'. Available tools: {', '.join(self.tools.get_tool_names())}"
@@ -219,13 +362,49 @@ class BaseAgent:
             if validation_error:
                 return validation_error
             
-            result = self.tools.execute(tool_name, **tool_input)
-            return str(result)
+            # Check for pause before tool execution
+            if self._is_paused:
+                return "Tool execution interrupted by user"
             
-        except TypeError as e:
-            return f"Error: Invalid parameters for {tool_name}. {str(e)}"
+            # Result container for thread communication
+            result = {"value": None, "error": None, "completed": False}
+            
+            def tool_worker():
+                """Run tool in separate thread"""
+                try:
+                    tool_result = self.tools.execute(tool_name, **tool_input)
+                    result["value"] = str(tool_result)
+                    result["completed"] = True
+                except Exception as e:
+                    result["error"] = str(e)
+                    result["completed"] = True
+            
+            # Start tool execution in background thread
+            tool_thread = threading.Thread(target=tool_worker, daemon=True)
+            tool_thread.start()
+            
+            # Wait for completion with pause checks and timeout
+            start_time = time.time()
+            timeout = 3.0  # 3 second timeout for tools (matches httpx timeout)
+            
+            while not result["completed"] and (time.time() - start_time) < timeout:
+                if self._is_paused:
+                    # Signal interruption
+                    return "Tool execution interrupted by user"
+                time.sleep(0.05)  # Check pause flag every 50ms
+            
+            # Check if tool completed
+            if not result["completed"]:
+                # Tool timed out
+                return f"Tool execution timed out after {timeout} seconds"
+            
+            if result["error"]:
+                return f"Tool execution error: {result['error']}"
+            
+            return result["value"] if result["value"] is not None else "Tool completed but returned no result"
+            
         except Exception as e:
-            return f"Error executing {tool_name}: {str(e)}"
+            return f"Tool execution error: {str(e)}"
     
     def _validate_tool_parameters(self, tool_name: str, tool_input: Dict) -> Optional[str]:
         """Validate tool parameters against schema"""
@@ -349,46 +528,78 @@ class BaseAgent:
                 thought = thought.split('\n')[0].strip()
         
         # Extract the FIRST action after the thought
-        action_match = re.search(r'Action:\s*(\w+)', response, re.IGNORECASE)
+        # Look for "Action:" that's NOT part of a markdown header (###)
+        # and NOT followed by a colon (to avoid "Immediate Action:")
+        action_match = re.search(r'(?<!#)\bAction:\s*([a-zA-Z_][a-zA-Z0-9_]+)', response, re.IGNORECASE)
         
         if not action_match:
-            # No action found - ask agent to provide one
+            # Try fallback patterns for common mistakes
+            # Pattern 1: Action: **tool_name**
+            action_match = re.search(r'(?<!#)\bAction:\s*\*\*([a-zA-Z_][a-zA-Z0-9_]+)\*\*', response, re.IGNORECASE)
+            
+            if not action_match:
+                # No action found - ask agent to provide one
+                return {
+                    'is_final': False,
+                    'thought': thought,
+                    'action': None,
+                    'action_input': None,
+                    'error': 'No action specified. Please specify which tool to use.'
+                }
+        
+        action = action_match.group(1).strip()
+        
+        # Validate that the action is a known tool
+        if not self.tools.has_tool(action):
+            # Try to find a similar tool name (case-insensitive)
+            available_tools = list(self.tools.get_tool_names())
+            similar_tools = [tool for tool in available_tools
+                           if action.lower() in tool.lower()
+                           or tool.lower() in action.lower()
+                           or action.lower().replace('_', '') == tool.lower().replace('_', '')]
+            
+            if similar_tools:
+                suggestion = f"Did you mean one of these tools: {', '.join(similar_tools)}?"
+            else:
+                suggestion = f"Available tools: {', '.join(available_tools)}"
+            
             return {
                 'is_final': False,
                 'thought': thought,
-                'action': None,
+                'action': action,
                 'action_input': None,
-                'error': 'No action specified. Please specify which tool to use.'
+                'error': f'Unknown tool "{action}". {suggestion}'
             }
         
         action = action_match.group(1).strip()
         
         # Extract the FIRST action input (must be valid JSON)
-        # Look for JSON object after "Action Input:"
-        action_input_match = re.search(
-            r'Action Input:\s*',
-            response,
-            re.IGNORECASE
-        )
+        # Look for JSON object after "Action Input:" - be more flexible
+        action_input_patterns = [
+            r'Action Input:\s*(\{.*?\})(?:\s|$)',  # Action Input: {json}
+            r'Action Input:\s*```json\s*(\{.*?\})\s*```',  # Action Input: ```json {json} ```
+            r'Action Input:\s*```\s*(\{.*?\})\s*```',  # Action Input: ``` {json} ```
+        ]
         
-        if action_input_match:
-            # Start from after "Action Input:"
-            json_start = action_input_match.end()
-            remaining_text = response[json_start:]
-            
-            # Try to find JSON object
-            action_input = self._extract_json_from_text(remaining_text)
-            
-            if action_input is None:
-                # Could not parse JSON
-                return {
-                    'is_final': False,
-                    'thought': thought,
-                    'action': action,
-                    'action_input': {},
-                    'error': f'Could not parse Action Input as valid JSON'
-                }
-        else:
+        action_input = None
+        for pattern in action_input_patterns:
+            match = re.search(pattern, response, re.DOTALL | re.IGNORECASE)
+            if match:
+                try:
+                    action_input = json.loads(match.group(1))
+                    break
+                except json.JSONDecodeError:
+                    continue
+        
+        # Fallback to the original method if patterns didn't work
+        if action_input is None:
+            action_input_match = re.search(r'Action Input:\s*', response, re.IGNORECASE)
+            if action_input_match:
+                json_start = action_input_match.end()
+                remaining_text = response[json_start:]
+                action_input = self._extract_json_from_text(remaining_text)
+        
+        if action_input is None:
             action_input = {}
         
         return {

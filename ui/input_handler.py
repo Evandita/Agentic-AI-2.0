@@ -160,8 +160,7 @@ class EnhancedInput:
             # Handle Ctrl+D
             return '/exit'
         except KeyboardInterrupt:
-            # Handle Ctrl+C
-            self.console.print()
-            return ''
+            # Handle Ctrl+C - raise it so the outer loop can handle it
+            raise
 
 
