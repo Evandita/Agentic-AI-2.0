@@ -13,10 +13,14 @@ class AgentConfig:
     
     # API Keys
     gemini_api_key: Optional[str]
+    huggingface_api_key: Optional[str]
     
     # Ollama Settings
     ollama_base_url: str
     ollama_model: str
+    
+    # Hugging Face Settings
+    huggingface_model: str
     
     # Display Settings
     console_width: str
@@ -44,8 +48,10 @@ def load_config() -> AgentConfig:
     
     config = AgentConfig(
         gemini_api_key=os.getenv("GEMINI_API_KEY"),
+        huggingface_api_key=os.getenv("HUGGINGFACE_API_KEY"),
         ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
         ollama_model=os.getenv("OLLAMA_MODEL", "llama3.1"),
+        huggingface_model=os.getenv("HUGGINGFACE_MODEL", "deepseek-ai/DeepSeek-R1"),
         console_width=os.getenv("CONSOLE_WIDTH", "auto"),
         log_level=os.getenv("LOG_LEVEL", "INFO")
     )
@@ -56,11 +62,12 @@ def load_config() -> AgentConfig:
 def check_api_availability(config: AgentConfig) -> dict[str, bool]:
     """
     Check which APIs are available and configured
-    Returns dict with 'gemini' and 'ollama' availability
+    Returns dict with 'gemini', 'ollama', and 'huggingface' availability
     """
     availability = {
         'gemini': False,
-        'ollama': False
+        'ollama': False,
+        'huggingface': False
     }
     
     # Check Gemini
@@ -87,6 +94,10 @@ def check_api_availability(config: AgentConfig) -> dict[str, bool]:
                 availability['ollama'] = True
     except Exception:
         availability['ollama'] = False
+    
+    # Check Hugging Face
+    if config.huggingface_api_key and config.huggingface_api_key != "your_huggingface_api_key_here":
+        availability['huggingface_api'] = True
     
     return availability
 

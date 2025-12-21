@@ -17,7 +17,7 @@ class CommandParser:
     """Parse user commands"""
     
     COMMANDS = {
-        '/agent': r'^/agent\s+(gemini|ollama)$',
+        '/agent': r'^/agent\s+(gemini|huggingface_api|ollama)$',
         '/model': r'^/model\s+(.+)$',
         '/mode': r'^/mode\s+(web-ctf|web_ctf|webctf)$',
         '/setting': r'^/setting\s+([\w-]+)\s+(.+)$',
@@ -32,6 +32,14 @@ class CommandParser:
         'gemini-2.0-flash',
         'gemini-1.5-pro',
         'gemini-1.5-flash',
+    ]
+    
+    HUGGINGFACE_MODELS = [
+        'deepseek-ai/DeepSeek-R1',
+        'openai/gpt-oss-120b',
+        'microsoft/WizardLM-2-8x22B',
+        'meta-llama/Llama-3.3-70B-Instruct',
+        'mistralai/Mistral-7B-Instruct-v0.1'
     ]
     
     SETTINGS = {
@@ -69,7 +77,7 @@ class CommandParser:
         input_text = input_text.strip().lower()
         
         if input_text == '/agent':
-            return "Usage: /agent <gemini|ollama>"
+            return "Usage: /agent <gemini|huggingface_api|ollama>"
         elif input_text == '/model':
             return "Usage: /model <model-name>"
         elif input_text == '/mode':
@@ -100,7 +108,7 @@ class CommandParser:
     def get_available_commands(cls) -> Dict[str, List[str]]:
         """Get available values for each command"""
         return {
-            'agent': ['gemini', 'ollama'],
+            'agent': ['gemini', 'huggingface_api', 'ollama'],
             'mode': ['web-ctf'],
             'setting': list(cls.SETTINGS.keys()),
         }
@@ -116,11 +124,16 @@ class CommandParser:
         return cls.GEMINI_MODELS
     
     @classmethod
+    def get_huggingface_models(cls) -> List[str]:
+        """Get available Hugging Face models"""
+        return cls.HUGGINGFACE_MODELS
+    
+    @classmethod
     def get_help_text(cls) -> str:
         """Get help text for all commands"""
         return """[bold cyan]Available Commands:[/bold cyan]
 
-[yellow]/agent <name>[/yellow]        - Switch to agent (gemini, ollama)
+[yellow]/agent <name>[/yellow]        - Switch to agent (gemini, huggingface_api, ollama)
 [yellow]/model <name>[/yellow]        - Select LLM model
 [yellow]/mode <name>[/yellow]         - Switch to mode (web-ctf)
 [yellow]/setting <name> <value>[/yellow] - Configure settings

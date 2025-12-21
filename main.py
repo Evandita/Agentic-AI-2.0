@@ -10,7 +10,7 @@ from rich.panel import Panel
 
 from config import load_config, check_api_availability, get_available_ollama_models
 from ui import DisplayManager, CommandParser, EnhancedInput
-from agents import GeminiAgent, OllamaAgent
+from agents import GeminiAgent, OllamaAgent, HuggingFaceAgent
 from tools import create_tool_registry
 from modes import get_mode, list_modes
 from logger import SessionLogger
@@ -70,12 +70,13 @@ class RedTeamSystem:
         self.tool_registry = create_tool_registry()
         
         # Check if we can proceed
-        if not self.availability['gemini'] and not self.availability['ollama']:
+        if not self.availability['gemini'] and not self.availability['ollama'] and not self.availability['huggingface_api']:
             self.display.print_error(
                 "No LLM providers available.",
                 "Please configure at least one:\n"
                 "1. Set GEMINI_API_KEY in .env file\n"
-                "2. Start Ollama: ollama serve && ollama pull llama3.1"
+                "2. Set HUGGINGFACE_API_KEY in .env file\n"
+                "3. Start Ollama: ollama serve && ollama pull llama3.1"
             )
             return False
         
@@ -89,6 +90,11 @@ class RedTeamSystem:
             status_lines.append("[green]✓[/green] Gemini API: Configured")
         else:
             status_lines.append("[yellow]⚠[/yellow] Gemini API: Not configured")
+        
+        if self.availability['huggingface_api']:
+            status_lines.append("[green]✓[/green] Hugging Face API: Configured")
+        else:
+            status_lines.append("[yellow]⚠[/yellow] Hugging Face API: Not configured")
         
         if self.availability['ollama']:
             if self.available_ollama_models:
@@ -112,13 +118,13 @@ class RedTeamSystem:
 This system helps you solve CTF challenges using AI agents.
 
 [yellow]Quick Start:[/yellow]
-1. Select an agent: [cyan]/agent gemini[/cyan] or [cyan]/agent ollama[/cyan]
+1. Select an agent: [cyan]/agent gemini[/cyan], [cyan]/agent huggingface_api[/cyan], or [cyan]/agent ollama[/cyan]
 2. Select a model: [cyan]/model <model-name>[/cyan] (optional, uses default if not set)
 3. Select a mode: [cyan]/mode web-ctf[/cyan]
 4. Describe your challenge and let the AI solve it!
 
 [yellow]Available Commands:[/yellow]
-• [cyan]/agent <name>[/cyan]  - Switch agent (gemini, ollama)
+• [cyan]/agent <name>[/cyan]  - Switch agent (gemini, huggingface_api, ollama)
 • [cyan]/model <name>[/cyan]  - Select LLM model
 • [cyan]/mode <name>[/cyan]   - Switch mode (web-ctf)
 • [cyan]/setting <name> <value>[/cyan] - Configure settings (truncate, max-iterations, loop-detection)
@@ -177,10 +183,32 @@ This system helps you solve CTF challenges using AI agents.
             self.logger.log_agent_selection("Ollama")
             return True
         
+        elif agent_name == 'huggingface_api':
+            if not self.availability['huggingface_api']:
+                self.display.print_error(
+                    "Hugging Face API not available",
+                    f"Please set HUGGINGFACE_API_KEY in your .env file"
+                )
+                return False
+            
+            self.current_agent = HuggingFaceAgent(
+                self.config,
+                self.tool_registry,
+                self.display,
+                max_iterations=self.max_iterations,
+                logger=self.logger,
+                loop_detection_enabled=self.loop_detection_enabled
+            )
+            self.current_agent_type = 'huggingface_api'
+            self.input_handler.set_current_agent('huggingface_api')
+            self.console.print("[green]✓[/green] Hugging Face agent selected")
+            self.logger.log_agent_selection("Hugging Face")
+            return True
+        
         else:
             self.display.print_error(
                 f"Unknown agent: {agent_name}",
-                "Available agents: gemini, ollama"
+                "Available agents: gemini, huggingface_api, ollama"
             )
             return False
     

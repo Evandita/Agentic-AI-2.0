@@ -1,6 +1,7 @@
 """Web content fetching tool"""
 
 import httpx
+from typing import Union
 from tools.registry import ToolRegistry
 
 
@@ -49,7 +50,7 @@ def setup_web_tools(registry: ToolRegistry):
         url: str,
         method: str = "GET",
         headers: dict = None,
-        data: str | dict = "",
+        data: Union[str, dict] = "",
         content_type: str = "form"
     ) -> str:
         """Fetch web content"""

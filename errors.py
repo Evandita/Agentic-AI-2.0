@@ -29,3 +29,8 @@ class OllamaConnectionError(LLMError):
 class GeminiAPIError(LLMError):
     """Gemini API errors"""
     pass
+
+
+class HuggingFaceAPIError(LLMError):
+    """Hugging Face API errors"""
+    pass

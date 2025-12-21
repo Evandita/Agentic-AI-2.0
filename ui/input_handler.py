@@ -37,7 +37,7 @@ class CommandCompleter(Completer):
         
         # /agent completions
         if command == '/agent':
-            options = ['gemini', 'ollama']
+            options = ['gemini', 'huggingface_api', 'ollama']
             if len(parts) == 1:
                 for opt in options:
                     yield Completion(opt, start_position=0)
@@ -114,6 +114,7 @@ class EnhancedInput:
         self.console = Console()
         self.available_ollama_models = available_ollama_models or []
         self.available_gemini_models = CommandParser.get_gemini_models()
+        self.available_huggingface_models = CommandParser.get_huggingface_models()
         self.current_agent = None
         
         # Setup prompt_toolkit session with history and autocomplete
@@ -135,6 +136,8 @@ class EnhancedInput:
             return self.available_gemini_models
         elif self.current_agent == 'ollama':
             return self.available_ollama_models
+        elif self.current_agent == 'huggingface_api':
+            return self.available_huggingface_models
         return []
     
     def prompt_with_suggestions(self, prompt_text: str = "> ") -> str:
